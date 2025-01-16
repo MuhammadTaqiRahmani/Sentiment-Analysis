@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-5">
+    <h2 class="mb-4">Sentiment Analysis Results</h2>
+    
+    <div class="row">
+        <div class="col-md-6">
+            <canvas id="sentimentChart" style="max-width: 400px; max-height: 400px;"></canvas>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Summary Statistics</h5>
+                    <p>Total Reviews: {{ results.total_reviews }}</p>
+                    <ul class="list-group">
+                        <li class="list-group-item">Very Good: {{ results.sentiment_counts.very_good }}</li>
+                        <li class="list-group-item">Neutral: {{ results.sentiment_counts.neutral }}</li>
+                        <li class="list-group-item">Very Bad: {{ results.sentiment_counts.very_bad }}</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const ctx = document.getElementById('sentimentChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: ['Very Good', 'Neutral', 'Very Bad'],
+            datasets: [{
+                data: [
+                    {{ results.sentiment_counts.very_good }},
+                    {{ results.sentiment_counts.neutral }},
+                    {{ results.sentiment_counts.very_bad }}
+                ],
+                backgroundColor: ['#28a745', '#ffc107', '#dc3545']
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Sentiment Distribution'
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

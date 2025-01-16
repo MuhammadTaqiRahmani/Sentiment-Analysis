@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}History{% endblock %}
+
+{% block content %}
+<div class="history-page">
+    <div class="history-header">
+        <div class="history-hero">
+            <h1><i class="fas fa-history"></i> Analysis History</h1>
+            <p class="lead">Track and manage your product review analyses</p>
+        </div>
+    </div>
+
+    <div class="history-content">
+        <div class="history-toolbar">
+            <div class="search-filter">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="historySearch" placeholder="Search analyses...">
+                </div>
+                <div class="filter-dropdown">
+                    <select id="sortFilter">
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="rating">Highest Rating</option>
+                    </select>
+                </div>
+            </div>
+            <div class="view-toggle">
+                <button class="view-btn active" data-view="grid">
+                    <i class="fas fa-th-large"></i>
+                </button>
+                <button class="view-btn" data-view="list">
+                    <i class="fas fa-list"></i>
+                </button>
+            </div>
+        </div>
+
+        {% if analyses %}
+            <div class="history-grid" id="historyContainer">
+                {% for analysis in analyses %}
+                <div class="history-card" data-product="{{ analysis.product_name }}">
+                    <div class="history-card-header">
+                        <div class="header-main">
+                            <h3 class="product-name">{{ analysis.product_name }}</h3>
+                            <span class="timestamp">
+                                <i class="far fa-clock"></i> 
+                                {{ analysis.timestamp.strftime('%Y-%m-%d %H:%M') if analysis.timestamp else 'N/A' }}
+                            </span>
+                        </div>
+                        <div class="sentiment-indicator {{ analysis.most_common_sentiment.lower().replace('(', '').replace(')', '').replace(' ', '-') }}">
+                            {{ analysis.most_common_sentiment.split('(')[0] }}
+                        </div>
+                    </div>
+
+                    <div class="history-card-body">
+                        <div class="stats-section">
+                            <div class="stat-group">
+                                <div class="stat-item">
+                                    <i class="fas fa-star"></i>
+                                    <div class="stat-details">
+                                        <span class="stat-value">{{ "%.1f"|format(analysis.average_rating) }}</span>
+                                        <span class="stat-label">Average Rating</span>
+                                    </div>
+                                </div>
+                                <div class="stat-item">
+                                    <i class="fas fa-comments"></i>
+                                    <div class="stat-details">
+                                        <span class="stat-value">{{ analysis.review_count }}</span>
+                                        <span class="stat-label">Reviews</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="sentiment-distribution">
+                            <canvas class="sentiment-chart" data-sentiments='{{ analysis.sentiment_counts|tojson }}'></canvas>
+                        </div>
+                    </div>
+
+                    <div class="history-card-footer">
+                        <div class="action-buttons">
+                            <a href="{{ analysis.url }}" target="_blank" class="action-btn view-btn">
+                                <i class="fas fa-external-link-alt"></i> View Product
+                            </a>
+                            <a href="{{ url_for('delete_analysis', analysis_id=analysis.id) }}" 
+                               class="action-btn delete-btn"
+                               onclick="return confirm('Are you sure you want to delete this analysis?')">
+                                <i class="fas fa-trash"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div class="pagination-section">
+                <div class="pagination">
+                    {% if current_page > 1 %}
+                        <a href="{{ url_for('history', page=current_page-1) }}" class="page-btn">
+                            <i class="fas fa-chevron-left"></i> Previous
+                        </a>
+                    {% endif %}
+                    
+                    <div class="page-info">
+                        <span class="current-page">{{ current_page }}</span>
+                        <span class="page-separator">/</span>
+                        <span class="total-pages">{{ total_pages }}</span>
+                    </div>
+                    
+                    {% if current_page < total_pages %}
+                        <a href="{{ url_for('history', page=current_page+1) }}" class="page-btn">
+                            Next <i class="fas fa-chevron-right"></i>
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        {% else %}
+            <div class="no-history">
+                <div class="empty-state">
+                    <i class="fas fa-folder-open"></i>
+                    <h3>No Analysis History</h3>
+                    <p>Start analyzing products to build your history</p>
+                    <a href="{{ url_for('analyze') }}" class="start-btn">
+                        <i class="fas fa-plus"></i> New Analysis
+                    </a>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize sentiment charts
+    document.querySelectorAll('.sentiment-chart').forEach(canvas => {
+        const sentiments = JSON.parse(canvas.dataset.sentiments);
+        new Chart(canvas, {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(sentiments),
+                datasets: [{
+                    data: Object.values(sentiments),
+                    backgroundColor: [
+                        '#4CAF50',  // Positive
+                        '#FFC107',  // Neutral
+                        '#F44336'   // Negative
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+    });
+
+    // Search functionality
+    const searchInput = document.getElementById('historySearch');
+    searchInput.addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase();
+        document.querySelectorAll('.history-card').forEach(card => {
+            const productName = card.dataset.product.toLowerCase();
+            card.style.display = productName.includes(searchTerm) ? 'block' : 'none';
+        });
+    });
+
+    // View toggle functionality
+    document.querySelectorAll('.view-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const view = this.dataset.view;
+            const container = document.getElementById('historyContainer');
+            container.className = view === 'grid' ? 'history-grid' : 'history-list';
+            
+            // Update active state
+            document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+        });
+    });
+});
+</script>
+{% endblock %}

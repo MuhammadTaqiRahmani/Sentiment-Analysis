@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+
+{% block title %}Analyze{% endblock %}
+
+{% block content %}
+<div class="analyze-page">
+    <div class="analyze-wrapper">
+        <div class="analyze-content">
+            <div class="analyze-header">
+                <h1 class="analyze-title">Analyze Product Reviews</h1>
+            </div>
+            <div class="analyze-form-container">
+                <form action="/analyze" method="POST" id="analyzeForm">
+                    <div class="input-group">
+                        <label for="product-url">
+                            <i class="fas fa-link"></i> Product URL
+                        </label>
+                        <input type="url" id="product-url" name="product_url" required 
+                               placeholder="Enter your product URL here...">
+                    </div>
+                    <button type="submit" class="analyze-button">
+                        <i class="fas fa-search"></i> Analyze Reviews
+                    </button>
+                </form>
+
+                <!-- Add loading section -->
+                <div id="loadingSection" class="loading-section" style="display: none;">
+                    <div class="progress-container">
+                        <div class="progress-bar">
+                            <div class="progress" id="progressBar"></div>
+                        </div>
+                        <div class="status-message" id="statusMessage">Initializing analysis...</div>
+                    </div>
+                </div>
+            </div>
+
+            {% if analysis %}
+                <div class="results-section">
+                    <h2 class="results-title">
+                        <i class="fas fa-chart-bar"></i> Analysis Results
+                    </h2>
+                    <div class="results-grid">
+                        <div class="result-card">
+                            <div class="result-icon">
+                                <i class="fas fa-star"></i>
+                            </div>
+                            <h3>Rating</h3>
+                            <p class="result-value">{{ analysis.rating }}</p>
+                        </div>
+                        <div class="result-card">
+                            <div class="result-icon">
+                                <i class="fas fa-heart"></i>
+                            </div>
+                            <h3>Sentiment</h3>
+                            <p class="result-value">{{ analysis.sentiment }}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="reviews-container">
+                        <h3><i class="fas fa-comments"></i> Reviews</h3>
+                        <div class="reviews-list">
+                            {% for review in analysis.reviews %}
+                                <div class="review-item">{{ review }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+document.getElementById('analyzeForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const loadingSection = document.getElementById('loadingSection');
+    const progressBar = document.getElementById('progressBar');
+    const statusMessage = document.getElementById('statusMessage');
+    
+    loadingSection.style.display = 'block';
+    statusMessage.textContent = 'Initializing analysis...';
+    
+    const formData = new FormData(this);
+    
+    fetch('/analyze', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        // Update the page with results
+        const resultsHtml = generateResultsHtml(data.data);
+        document.querySelector('.analyze-content').innerHTML = resultsHtml;
+        
+        // Render the sentiment chart
+        renderSentimentChart(data.data);
+    })
+    .catch(error => {
+        statusMessage.textContent = 'Error: ' + error.message;
+        loadingSection.classList.add('error');
+    });
+
+    let attempts = 0;
+    const maxAttempts = 60; // 1 minute timeout
+    
+    const progressInterval = setInterval(() => {
+        attempts++;
+        if (attempts >= maxAttempts) {
+            clearInterval(progressInterval);
+            statusMessage.textContent = 'Analysis timed out. Please try again.';
+            loadingSection.classList.add('error');
+            return;
+        }
+
+        fetch('/get_analysis_status')
+            .then(response => response.json())
+            .then(data => {
+                progressBar.style.width = data.progress + '%';
+                statusMessage.textContent = data.message;
+                
+                if (data.status === 'completed') {
+                    clearInterval(progressInterval);
+                }
+            });
+    }, 1000);
+});
+
+function generateResultsHtml(data) {
+    return `
+        <div class="results-section">
+            <h2 class="results-title"><i class="fas fa-chart-bar"></i> Analysis Results</h2>
+            
+            <div class="results-summary-card">
+                <h3><i class="fas fa-info-circle"></i> Analysis Summary</h3>
+                <div class="summary-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Average Rating</span>
+                        <span class="stat-value">${data.average_rating.toFixed(1)}</span>
+                        <i class="fas fa-star"></i>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Total Reviews</span>
+                        <span class="stat-value">${data.total_reviews}</span>
+                        <i class="fas fa-comments"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chart-section">
+                <h3><i class="fas fa-chart-pie"></i> Sentiment Distribution</h3>
+                <div class="chart-container">
+                    <canvas id="sentimentChart"></canvas>
+                </div>
+            </div>
+
+            <div class="reviews-section">
+                <h3><i class="fas fa-list"></i> Review Highlights</h3>
+                <div class="reviews-grid">
+                    ${data.reviews.slice(0, 6).map(review => `
+                        <div class="review-card ${review.sentiment.toLowerCase()}">
+                            <div class="review-header">
+                                <i class="fas fa-quote-left"></i>
+                                <span class="sentiment-tag">${review.sentiment}</span>
+                            </div>
+                            <p class="review-text">${review.text}</p>
+                        </div>
+                    `).join('')}
+                </div>
+                ${data.reviews.length > 6 ? `
+                    <button class="load-more-btn">
+                        <i class="fas fa-plus"></i> Load More Reviews
+                    </button>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function renderSentimentChart(data) {
+    const ctx = document.getElementById('sentimentChart').getContext('2d');
+    
+    // Convert sentiment distribution to chart data
+    const sentimentLabels = [];
+    const sentimentValues = [];
+    const colors = [];
+
+    for (const [sentiment, value] of Object.entries(data.sentiment_counts)) {
+        // Format the label
+        const label = sentiment.split('(')[0].trim();
+        sentimentLabels.push(label);
+        sentimentValues.push(value);
+        
+        // Assign colors based on sentiment
+        if (sentiment.includes('positive')) {
+            colors.push('#4CAF50');
+        } else if (sentiment.includes('neutral')) {
+            colors.push('#FFC107');
+        } else {
+            colors.push('#F44336');
+        }
+    }
+
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: sentimentLabels,
+            datasets: [{
+                data: sentimentValues,
+                backgroundColor: colors,
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right'
+                },
+                title: {
+                    display: true,
+                    text: 'Sentiment Distribution'
+                }
+            }
+        }
+    });
+}
+</script>
+
+<style>
+.results-summary-card {
+    background: white;
+    border-radius: 15px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.summary-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-top: 1rem;
+}
+
+.distribution-grid {
+    display: grid;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.distribution-item {
+    background: #f5f5f5;
+    border-radius: 8px;
+    padding: 0.5rem;
+    position: relative;
+}
+
+.sentiment-bar {
+    height: 24px;
+    border-radius: 4px;
+    transition: width 1s ease-out;
+}
+
+.very_good .sentiment-bar { background: #4CAF50; }
+.neutral .sentiment-bar { background: #FFC107; }
+.very_bad .sentiment-bar { background: #F44336; }
+
+.sentiment-label {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    left: 1rem;
+    display: flex;
+    justify-content: space-between;
+    width: calc(100% - 2rem);
+    color: white;
+    font-weight: 500;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.reviews-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.review-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    border-top: 4px solid;
+}
+
+.review-card.very_good { border-color: #4CAF50; }
+.review-card.neutral { border-color: #FFC107; }
+.review-card.very_bad { border-color: #F44336; }
+
+.review-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.sentiment-tag {
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.load-more-btn {
+    display: block;
+    margin: 2rem auto 0;
+    padding: 0.75rem 2rem;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.load-more-btn:hover {
+    background: #357abd;
+    transform: translateY(-2px);
+}
+
+.chart-section {
+    background: white;
+    border-radius: 15px;
+    padding: 2rem;
+    margin: 2rem 0;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.chart-container {
+    height: 400px;
+    margin: 1rem 0;
+    position: relative;
+}
+</style>
+{% endblock %}
